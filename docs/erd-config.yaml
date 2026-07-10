@@ -1,0 +1,31 @@
+app_label: django_pricemanager
+groups:
+  - name: core-pricing
+    title: "Core Pricing"
+    models:
+      - CurrentPrice
+      - PriceHistory
+      - CurrentPriceAttribute
+  - name: tax
+    title: "Tax Configuration"
+    models:
+      - TaxClass
+      - TaxRate
+  - name: channels
+    title: "Channels"
+    models:
+      - Channel
+      - SaleChannel
+  - name: products
+    title: "Product & Attribute Representations"
+    models:
+      - ProductRepresentation
+      - AttributeRepresentation
+      - CustomerRepresentation
+      - Currency
+  - name: legacy
+    title: "Legacy (Deprecated)"
+    models:
+      - PriceList
+      - Price
+      - PriceAttribute

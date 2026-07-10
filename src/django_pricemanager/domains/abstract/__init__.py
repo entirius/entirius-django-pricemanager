@@ -1,0 +1,1 @@
+from .pricemanager import DomainPricemanager
