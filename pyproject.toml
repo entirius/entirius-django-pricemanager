@@ -1,6 +1,6 @@
 [project]
 name = "entirius-django-pricemanager"
-version = "4.0.0"
+version = "4.0.1"
 description = "Price management for the Volkanos ecommerce platform: product prices across countries, currencies, channels, and tax regimes"
 authors = [{ name = "Entirius" }]
 readme = "README.md"

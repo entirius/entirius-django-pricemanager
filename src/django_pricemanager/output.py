@@ -39,6 +39,7 @@ from django_pricemanager.services.pricelist_service import get_latest_pricelist
 from django_pricemanager.services.product_representation_service import (
     get_price,
     get_price_for_country_and_currency,  # django_cynthia, django-checkout
+    validate_access_to_price_list,  # noqa: F401  # django_cynthia, django-checkout
 )
 
 
