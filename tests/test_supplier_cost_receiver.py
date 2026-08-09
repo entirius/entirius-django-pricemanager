@@ -22,7 +22,7 @@ pytestmark = pytest.mark.django_db
 def _apply(products, *, is_preferred=True, has_link=True, cost="0.13", currency=None):
     return supplier_cost_service.apply_supplier_cost(
         real_product_sku=products.chair.sku,
-        supplier_idx="fortrade",
+        supplier_idx="acme",
         channel_idx=products.channel.idx,
         cost=Decimal(cost),
         currency=(currency or products.pln.iso3),
@@ -39,7 +39,7 @@ def test_preferred_cost_creates_purchasecost_not_currentprice(products):
     assert outcome.audit_source == supplier_cost_service.AUDIT_COST_RECEIVED
     pc = PurchaseCost.objects.get(product=products.chair, channel=products.channel, country=products.pl)
     assert pc.net_cost == Decimal("0.13")
-    assert pc.supplier_idx == "fortrade"
+    assert pc.supplier_idx == "acme"
     # Product stays unpriced — cost must not create a CurrentPrice.
     assert not CurrentPrice.objects.filter(product=products.chair, channel=products.channel).exists()
 

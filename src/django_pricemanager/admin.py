@@ -12,12 +12,16 @@ from django_pricemanager.services.tax_class_service import read_from_csv
 
 from .models import (
     AttributeRepresentation,
+    BaselineConfig,
+    BaselineTombstone,
     Channel,
     CurrentPrice,
     CustomerRepresentation,
     Price,
+    PriceBoundsConfig,
     PriceHistory,
     PriceList,
+    PriceSourcePolicy,
     ProductRepresentation,
     PurchaseCost,
     SaleChannel,
@@ -128,7 +132,7 @@ class TaxClassAdmin(admin.ModelAdmin):
 
 
 class ChannelAdmin(admin.ModelAdmin):
-    list_display = ("idx", "name", "default_country")
+    list_display = ("idx", "name", "default_country", "baseline_enabled")
     filter_horizontal = ("calculate_countries",)
     raw_id_fields = ("default_country",)
 
@@ -226,3 +230,36 @@ class PriceManagerSettingsAdmin(admin.ModelAdmin):
 
 
 admin.site.register(PriceManagerSettings, PriceManagerSettingsAdmin)
+
+
+class PriceSourcePolicyAdmin(admin.ModelAdmin):
+    list_display = ("source", "recalc_overwritable", "enforce_mode")
+    list_filter = ("recalc_overwritable", "enforce_mode")
+
+
+admin.site.register(PriceSourcePolicy, PriceSourcePolicyAdmin)
+
+
+class PriceBoundsConfigAdmin(admin.ModelAdmin):
+    list_display = ("product", "channel", "map_value", "min_margin_percent")
+    list_filter = ("channel",)
+    search_fields = ("product__sku",)
+    autocomplete_fields = ("product",)
+
+
+admin.site.register(PriceBoundsConfig, PriceBoundsConfigAdmin)
+
+
+class BaselineConfigAdmin(admin.ModelAdmin):
+    list_display = ("channel", "markup_percent", "rounding")
+
+
+class BaselineTombstoneAdmin(admin.ModelAdmin):
+    list_display = ("product", "channel", "created_at")
+    search_fields = ("product__sku",)
+    list_filter = ("channel",)
+    readonly_fields = ("created_at",)
+
+
+admin.site.register(BaselineConfig, BaselineConfigAdmin)
+admin.site.register(BaselineTombstone, BaselineTombstoneAdmin)

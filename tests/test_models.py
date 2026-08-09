@@ -11,6 +11,7 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from django_pricemanager.models import CurrentPrice, CustomerRepresentation
+from django_pricemanager.models.price_bounds import PriceBoundsConfig
 
 
 @pytest.mark.django_db
@@ -52,6 +53,28 @@ class TestCurrentPriceUniqueConstraints:
         )
         assert customer_price.pk is not None
         assert CurrentPrice.objects.filter(product=base.product, channel=base.channel).count() >= 2
+
+
+@pytest.mark.django_db
+class TestPriceBoundsConfigUniqueScope:
+    def test_duplicate_global_scope_raises_integrity_error(self):
+        """Two rows scoped (product=NULL, channel=NULL) would otherwise silently make
+        most-specific-wins resolution nondeterministic (nulls_distinct=False closes this)."""
+        PriceBoundsConfig.objects.create(map_value=Decimal("10.00"))
+        with pytest.raises(IntegrityError):
+            PriceBoundsConfig.objects.create(map_value=Decimal("20.00"))
+
+    def test_duplicate_channel_only_scope_raises_integrity_error(self, prices_populated):
+        ns = prices_populated
+        PriceBoundsConfig.objects.create(channel=ns.channel, map_value=Decimal("10.00"))
+        with pytest.raises(IntegrityError):
+            PriceBoundsConfig.objects.create(channel=ns.channel, map_value=Decimal("20.00"))
+
+    def test_duplicate_product_channel_scope_raises_integrity_error(self, prices_populated):
+        ns = prices_populated
+        PriceBoundsConfig.objects.create(product=ns.chair, channel=ns.channel, map_value=Decimal("10.00"))
+        with pytest.raises(IntegrityError):
+            PriceBoundsConfig.objects.create(product=ns.chair, channel=ns.channel, map_value=Decimal("20.00"))
 
 
 @pytest.mark.django_db
