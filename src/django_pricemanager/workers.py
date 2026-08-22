@@ -51,7 +51,7 @@ def create_pricelists(channel: Channel, price_source: str = SaleChannel.PRICE_SO
     price_source = check_pricelist_soruce(price_source)
     try:
         pricelist: PriceList = get_latest_pricelist_by_source(channel, price_source)
-        prices = Price.objects.filter(pricelist=pricelist)
+        prices = Price.objects.filter(pricelist=pricelist).select_related("product")
         raport["prices_count"] = len(prices)
         rest_countries = (
             TaxRate.objects.filter(~Q(country=pricelist.country)).values_list("country", flat=True).distinct()
@@ -82,8 +82,11 @@ def create_pricelists(channel: Channel, price_source: str = SaleChannel.PRICE_SO
                 country=country,
             )
             new_pricelist.save()
+            dual_write_ctx = _build_dual_write_ctx(new_pricelist, prices, channel, country)
             for price in tqdm(prices, desc=f"Creating prices for country: {country.iso2} - channel: {channel.idx}"):
-                create_price_from_source(new_pricelist, price, country, channel.calculate_direction)
+                create_price_from_source(
+                    new_pricelist, price, country, channel.calculate_direction, dual_write_ctx=dual_write_ctx
+                )
             new_pricelist.status = PriceListStatusEnum.READY
             new_pricelist.save()
 
@@ -102,7 +105,42 @@ def create_pricelists(channel: Channel, price_source: str = SaleChannel.PRICE_SO
         raise e
 
 
-def create_price_from_source(pricelist: PriceList, price_original: Price, country, calculate_direction):
+def _build_dual_write_ctx(pricelist: PriceList, prices, channel: Channel, country) -> dict | None:
+    """Prefetch policy/bounds/existing-sources once per country instead of per row.
+
+    All rows generated for one country share (channel, country, currency, customer_representation),
+    so existing sources can be bulk-loaded exactly like migration_service._flush_current_prices does.
+    """
+    if not PRICEMANAGER_DUAL_WRITE:
+        return None
+    from django_pricemanager.models import CurrentPrice
+    from django_pricemanager.services import price_bounds_service
+    from django_pricemanager.services.price_write_guard import load_policy_map
+
+    customer_representation = pricelist.sale_channel.customer_representation
+    skus = [price.product.sku for price in prices if price.product]
+    product_ids = [price.product_id for price in prices if price.product_id]
+    bounds_by_sku = price_bounds_service.get_price_bounds_bulk([(sku, channel, country) for sku in skus])
+    existing_sources = {
+        (row["product_id"], row["product_parent_id"]): row["source"]
+        for row in CurrentPrice.objects.filter(
+            product_id__in=product_ids,
+            channel=channel,
+            country=country,
+            currency=pricelist.currency,
+            customer_representation=customer_representation,
+        ).values("product_id", "product_parent_id", "source")
+    }
+    return {
+        "policy_map": load_policy_map(),
+        "bounds_by_sku": bounds_by_sku,
+        "existing_sources": existing_sources,
+    }
+
+
+def create_price_from_source(
+    pricelist: PriceList, price_original: Price, country, calculate_direction, dual_write_ctx: dict | None = None
+):
     if price_original.attrs.exists():
         tax_rate = TaxRate.objects.filter(
             country=country, tax_class__attr_representations__prices_attrs=price_original
@@ -158,40 +196,61 @@ def create_price_from_source(pricelist: PriceList, price_original: Price, countr
     # Dual-write to CurrentPrice + PriceHistory
     if PRICEMANAGER_DUAL_WRITE and price.product:
         from django_pricemanager.models import CurrentPrice, PriceHistory
+        from django_pricemanager.services import price_bounds_service
+        from django_pricemanager.services.price_write_guard import guard_price_write
 
         channel = pricelist.sale_channel.channel
-        cp, _ = CurrentPrice.objects.update_or_create(
-            product=price.product,
-            channel=channel,
-            country=country,
-            currency=pricelist.currency,
-            customer_representation=pricelist.sale_channel.customer_representation,
-            product_parent=price.product_parent,
-            defaults={
-                "net_value": net_value,
-                "gross_value": gross_value,
-                "special_net_value": special_net_value,
-                "special_gross_value": special_gross_value,
-                "special_from_date": price_original.special_from_date,
-                "special_to_date": price_original.special_to_date,
-                "tax_rate": tax_rate,
-                "source": PriceSource.GENERATION,
-                "is_only_for_verified_user": pricelist.sale_channel.is_only_for_verified_user,
-            },
+        customer_representation = pricelist.sale_channel.customer_representation
+        ctx = dual_write_ctx or _build_dual_write_ctx(pricelist, [price_original], channel, country)
+        bounds = price_bounds_service.bounds_for(ctx["bounds_by_sku"], price.product.sku, channel.idx, country.iso2)
+        existing_source = ctx["existing_sources"].get((price.product_id, price.product_parent_id))
+        new_values = {
+            "net_value": net_value,
+            "gross_value": gross_value,
+            "special_net_value": special_net_value,
+            "special_gross_value": special_gross_value,
+            "tax_rate": tax_rate,
+        }
+        decision = guard_price_write(
+            existing_source=existing_source,
+            new_values=new_values,
+            writer=PriceSource.GENERATION,
+            policy_map=ctx["policy_map"],
+            bounds=bounds,
         )
-        PriceHistory.objects.create(
-            product=price.product,
-            channel=channel,
-            country=country,
-            currency=pricelist.currency,
-            customer_representation=pricelist.sale_channel.customer_representation,
-            gross_value=gross_value,
-            net_value=net_value,
-            special_gross_value=special_gross_value,
-            special_net_value=special_net_value,
-            tax_rate=tax_rate,
-            source=PriceSource.GENERATION,
-        )
+        if decision.status != "skipped":
+            cp, _ = CurrentPrice.objects.update_or_create(
+                product=price.product,
+                channel=channel,
+                country=country,
+                currency=pricelist.currency,
+                customer_representation=customer_representation,
+                product_parent=price.product_parent,
+                defaults={
+                    "net_value": decision.values["net_value"],
+                    "gross_value": decision.values["gross_value"],
+                    "special_net_value": decision.values.get("special_net_value"),
+                    "special_gross_value": decision.values.get("special_gross_value"),
+                    "special_from_date": price_original.special_from_date,
+                    "special_to_date": price_original.special_to_date,
+                    "tax_rate": tax_rate,
+                    "source": decision.source,
+                    "is_only_for_verified_user": pricelist.sale_channel.is_only_for_verified_user,
+                },
+            )
+            PriceHistory.objects.create(
+                product=price.product,
+                channel=channel,
+                country=country,
+                currency=pricelist.currency,
+                customer_representation=customer_representation,
+                gross_value=cp.gross_value,
+                net_value=cp.net_value,
+                special_gross_value=cp.special_gross_value,
+                special_net_value=cp.special_net_value,
+                tax_rate=tax_rate,
+                source=decision.source,
+            )
 
     logger_process.info(
         f"Created prices for sku/idx {sku_idx} in given country: {country.iso2} by tax rate: {tax_rate.rate}",

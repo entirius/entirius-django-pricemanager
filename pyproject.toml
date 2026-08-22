@@ -1,6 +1,6 @@
 [project]
 name = "entirius-django-pricemanager"
-version = "4.1.0"
+version = "4.2.0"
 description = "Price management for the Volkanos ecommerce platform: product prices across countries, currencies, channels, and tax regimes"
 authors = [{ name = "Entirius" }]
 readme = "README.md"
@@ -73,5 +73,6 @@ pep621_dev_dependency_groups = ["dev", "test"]
 
 [tool.deptry.per_rule_ignores]
 # Soft integrations guarded by try/except ImportError: channel sync reads django_pim.Channel,
-# the supplier-cost receiver subscribes to django_suppliers signals. Both no-op when absent.
-DEP001 = ["django_pim", "django_suppliers"]
+# the supplier-cost receiver subscribes to django_atlas signals (declare an extra once
+# entirius-django-atlas is published). Both no-op when absent.
+DEP001 = ["django_pim", "django_atlas"]

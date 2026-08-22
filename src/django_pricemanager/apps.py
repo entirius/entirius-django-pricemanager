@@ -12,5 +12,6 @@ class DjangoPricemanagerConfig(AppConfig):
     is_volkanos = True
 
     def ready(self):
+        import django_pricemanager.signals.baseline  # noqa: F401
         import django_pricemanager.signals.handlers  # noqa: F401
         import django_pricemanager.signals.supplier_cost  # noqa: F401

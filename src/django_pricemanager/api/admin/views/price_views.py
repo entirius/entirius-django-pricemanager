@@ -255,7 +255,10 @@ class PriceViewSet(viewsets.ViewSet):
         summary="Preview price change",
         description=(
             "Calculates the per-country price breakdown for the given value without saving any data. "
-            "Uses the channel's calculate_direction (net→gross or gross→net) and each country's tax rate."
+            "Uses the channel's calculate_direction (net→gross or gross→net) and each country's tax rate. "
+            "Each entry also reports the guard/bounds outcome the save would produce: `would_be` "
+            "(applied | clamped | skipped), `reason` and the bounds `floor` — a clamped entry's "
+            "net/gross are the clamped values that would actually be persisted."
         ),
         parameters=[_CHANNEL_IDX_PARAM, _SKU_PARAM],
         request=PriceEditRequest,
@@ -312,7 +315,7 @@ class PriceViewSet(viewsets.ViewSet):
                 raise DRFValidationError({"special_from_date": ["Invalid date format."]})
             return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
 
-        updated = price_edit_service.edit_price(
+        report = price_edit_service.edit_price(
             channel=channel,
             sku=sku,
             value=data.value,
@@ -322,14 +325,20 @@ class PriceViewSet(viewsets.ViewSet):
             special_to=_parse_date(data.special_to_date),
             user=request.user,
         )
+        if not report.applied and report.skipped:
+            reasons = "; ".join(f"{s['country']}: {s['reason']}" for s in report.skipped)
+            raise DRFValidationError({"value": [f"Rejected by write guard: {reasons}"]})
+
         direction_map = {0: "from_net_to_gross", 1: "from_gross_to_net"}
-        tax_class = updated[0].product.tax_class.idx if updated else ""
+        tax_class = report.applied[0].product.tax_class.idx if report.applied else ""
         response = PricePatchResponse(
             sku=sku,
             tax_class=tax_class,
             calculate_direction=direction_map.get(channel.calculate_direction, "from_net_to_gross"),
-            prices=[_current_price_to_country_response(cp) for cp in updated],
-            changes_logged=len(updated),
+            prices=[_current_price_to_country_response(cp) for cp in report.applied],
+            changes_logged=len(report.applied),
+            skipped=report.skipped,
+            clamped=report.clamped,
         )
         return Response(response.model_dump())
 

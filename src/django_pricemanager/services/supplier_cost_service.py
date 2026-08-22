@@ -5,10 +5,10 @@
 """Apply a supplier cost update to PurchaseCost (buy-side cost store).
 
 Pure service — caller (signal handler in ``signals/supplier_cost.py``) resolves the
-supplier-side context (link / preferred flag / supplier idx) by talking to
-``django_suppliers`` and passes it in. This module has zero hard dependency on
-django_suppliers, so the test suite can exercise the full DB write path without
-having the suppliers app installed.
+source-side context (link / primary flag / source idx) by talking to
+``django_atlas`` and passes it in. This module has zero hard dependency on
+django_atlas, so the test suite can exercise the full DB write path without
+having the atlas app installed.
 
 The supplier cost lands in ``PurchaseCost`` — NOT ``CurrentPrice``. A supplier cost
 is what we PAY, not what we SELL for, so it never creates a sellable price. The
@@ -17,8 +17,8 @@ CurrentPrice.net_value vs PurchaseCost.net_cost.
 
 Decision rules:
 
-* No active ProductSupplierLink → skip, audit ``cost_ignored_no_link``
-* Link.is_preferred is False → skip, audit ``cost_ignored_non_preferred``
+* No active SourceProductLink → skip, audit ``cost_ignored_no_link``
+* Link.is_primary is False → skip, audit ``cost_ignored_non_primary``
 * Channel / Currency / Product lookup misses → skip, audit ``cost_skipped_resolution_failed``
 * Existing PurchaseCost.net_cost == new cost → idempotency skip (no audit)
 * Otherwise → update_or_create PurchaseCost, audit ``cost_signal_received``
@@ -50,12 +50,12 @@ class SupplierCostOutcome:
     skip_reason: SkipReason | None = None
 
 
-# Audit source constants — mirrored in django_suppliers.enums.ChangeLogSource
+# Audit source constants — mirrored in django_atlas.enums.ChangeLogSource
 # whitelist. Kept here as plain strings so this module has no hard dep on the
-# suppliers package (consistent with the rest of pricemanager's "soft coupling"
+# atlas package (consistent with the rest of pricemanager's "soft coupling"
 # rule for the cost subscriber).
 AUDIT_COST_RECEIVED = "cost_signal_received"
-AUDIT_IGNORED_NON_PREFERRED = "cost_ignored_non_preferred"
+AUDIT_IGNORED_NON_PREFERRED = "cost_ignored_non_primary"
 AUDIT_IGNORED_NO_LINK = "cost_ignored_no_link"
 AUDIT_SKIPPED_RESOLUTION = "cost_skipped_resolution_failed"
 
