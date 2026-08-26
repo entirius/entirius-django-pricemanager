@@ -6,6 +6,14 @@ groups:
       - CurrentPrice
       - PriceHistory
       - CurrentPriceAttribute
+      - PurchaseCost
+  - name: governance
+    title: "Write Guard & Bounds (PriceFighter)"
+    models:
+      - PriceSourcePolicy
+      - PriceBoundsConfig
+      - BaselineConfig
+      - BaselineTombstone
   - name: tax
     title: "Tax Configuration"
     models:
@@ -22,7 +30,6 @@ groups:
       - ProductRepresentation
       - AttributeRepresentation
       - CustomerRepresentation
-      - Currency
   - name: legacy
     title: "Legacy (Deprecated)"
     models:

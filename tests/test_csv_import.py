@@ -20,6 +20,8 @@ from django_pricemanager.models import (
     PriceList,
     SaleChannel,
 )
+from django_pricemanager.models.choices import PriceSource
+from django_pricemanager.models.price_bounds import PriceBoundsConfig
 from django_pricemanager.models.pricelist import PriceListStatusEnum
 from django_pricemanager.services.migration_service import (
     backfill_price_history,
@@ -98,6 +100,72 @@ class TestPopulateCurrentPrices:
         count = populate_current_prices(dry_run=True)
         assert count > 0
         assert CurrentPrice.objects.count() == before
+
+
+@pytest.mark.django_db
+class TestPopulateCurrentPricesGuard:
+    """_flush_current_prices funnels through guard_price_write(writer=MIGRATION) — no test
+    previously ran populate_current_prices() with an existing row or a bounds config in place.
+    """
+
+    def test_migration_overwrites_admin_edit_row(self, products):
+        """writer=migration is unrestricted precedence — even an admin_edit lock gets replaced."""
+        ns = products
+        rate = ns.rates[("standard", "PL")]
+        CurrentPrice.objects.create(
+            product=ns.chair,
+            channel=ns.channel,
+            country=ns.pl,
+            currency=ns.pln,
+            tax_rate=rate,
+            net_value=Decimal("1.00"),
+            gross_value=rate.gross_price(Decimal("1.00")),
+            source=PriceSource.ADMIN_EDIT,
+        )
+        _make_pricelist(ns, ns.channel, ns.pl, ns.pln, Decimal("100.00"), Decimal("123.00"), ns.chair)
+
+        populate_current_prices()
+
+        cp = CurrentPrice.objects.get(product=ns.chair, channel=ns.channel, country=ns.pl, currency=ns.pln)
+        assert cp.source == PriceSource.MIGRATION
+        assert cp.gross_value == Decimal("123.00")
+
+    @pytest.mark.parametrize("existing_source", [PriceSource.PRICEFIGHTER, PriceSource.BASELINE])
+    def test_migration_overwrites_automated_sources(self, products, existing_source):
+        """writer=MIGRATION falls into the guard's unrestricted catch-all branch, same as
+        admin_edit above — pricefighter/baseline's own precedence carve-outs only special-case
+        those two writers, never a source they overwrote. Regression guard: a future change to
+        the catch-all branch of _precedence_allows must not silently start skipping these rows."""
+        ns = products
+        rate = ns.rates[("standard", "PL")]
+        CurrentPrice.objects.create(
+            product=ns.chair,
+            channel=ns.channel,
+            country=ns.pl,
+            currency=ns.pln,
+            tax_rate=rate,
+            net_value=Decimal("1.00"),
+            gross_value=rate.gross_price(Decimal("1.00")),
+            source=existing_source,
+        )
+        _make_pricelist(ns, ns.channel, ns.pl, ns.pln, Decimal("100.00"), Decimal("123.00"), ns.chair)
+
+        populate_current_prices()
+
+        cp = CurrentPrice.objects.get(product=ns.chair, channel=ns.channel, country=ns.pl, currency=ns.pln)
+        assert cp.source == PriceSource.MIGRATION
+        assert cp.gross_value == Decimal("123.00")
+
+    def test_migration_clamps_to_map_bound(self, products):
+        ns = products
+        PriceBoundsConfig.objects.create(product=ns.chair, channel=ns.channel, map_value=Decimal("500.00"))
+        _make_pricelist(ns, ns.channel, ns.pl, ns.pln, Decimal("100.00"), Decimal("123.00"), ns.chair)
+
+        populate_current_prices()
+
+        cp = CurrentPrice.objects.get(product=ns.chair, channel=ns.channel, country=ns.pl, currency=ns.pln)
+        assert cp.gross_value == Decimal("500.00")
+        assert cp.source == PriceSource.MIGRATION
 
 
 @pytest.mark.django_db

@@ -6,8 +6,8 @@
 
 Covers the full DB write (PurchaseCost only — never CurrentPrice/PriceHistory),
 the resolution failure branch, and the receiver module's contract on import when
-django_suppliers is not installed (pricemanager test settings deliberately omit
-suppliers from INSTALLED_APPS).
+django_atlas is not installed (pricemanager test settings deliberately omit
+atlas from INSTALLED_APPS).
 """
 
 from decimal import Decimal
@@ -24,7 +24,7 @@ def test_preferred_write_persists_purchasecost_only(products):
     """One signal application → one PurchaseCost row; no CurrentPrice, no PriceHistory."""
     outcome = supplier_cost_service.apply_supplier_cost(
         real_product_sku=products.chair.sku,
-        supplier_idx="fortrade",
+        supplier_idx="acme",
         channel_idx=products.channel.idx,
         cost=Decimal("0.13"),
         currency=products.pln.iso3,
@@ -35,7 +35,7 @@ def test_preferred_write_persists_purchasecost_only(products):
     assert outcome.written is True
     pc = PurchaseCost.objects.get(product=products.chair, channel=products.channel, country=products.pl)
     assert pc.net_cost == Decimal("0.13")
-    assert pc.supplier_idx == "fortrade"
+    assert pc.supplier_idx == "acme"
 
     # Buy-side cost must NOT leak into the sell price or its history.
     assert not CurrentPrice.objects.filter(product=products.chair, channel=products.channel).exists()
@@ -46,7 +46,7 @@ def test_resolution_failure_when_product_unknown(products):
     """Unknown SKU → product resolution fails, service skips with resolution_failed, no write."""
     outcome = supplier_cost_service.apply_supplier_cost(
         real_product_sku="DOES-NOT-EXIST",
-        supplier_idx="fortrade",
+        supplier_idx="acme",
         channel_idx=products.channel.idx,
         cost=Decimal("0.13"),
         currency=products.pln.iso3,
@@ -59,12 +59,12 @@ def test_resolution_failure_when_product_unknown(products):
     assert not PurchaseCost.objects.filter(channel=products.channel).exists()
 
 
-def test_signal_handler_module_imports_without_suppliers_installed():
-    """Pricemanager test settings deliberately omit django_suppliers — module must import cleanly."""
+def test_signal_handler_module_imports_without_atlas_installed():
+    """Pricemanager test settings deliberately omit django_atlas — module must import cleanly."""
     from django_pricemanager.signals import supplier_cost as handler_module
 
-    assert handler_module._SUPPLIERS_AVAILABLE is False
+    assert handler_module._ATLAS_AVAILABLE is False
     # The receiver function exists and is safely callable as a no-op.
     handler_module.on_supplier_cost_updated(
-        sender=None, supplier_product=None, channel_idx="x", cost=Decimal("0"), currency="PLN"
+        sender=None, source_product=None, channel_idx="x", cost=Decimal("0"), currency="PLN"
     )

@@ -9,6 +9,9 @@ from decimal import Decimal
 import pytest
 
 from django_pricemanager.models import Channel, CurrentPrice, PriceHistory, ProductRepresentation, TaxClass
+from django_pricemanager.models.choices import PriceSource
+from django_pricemanager.models.price_bounds import PriceBoundsConfig
+from django_pricemanager.models.price_write_policy import PriceSourcePolicy, PriceWriteEnforceMode
 
 # ---------------------------------------------------------------------------
 # Authentication / authorisation
@@ -144,6 +147,66 @@ class TestPriceEndpoints:
         )
         assert resp.status_code == 404
 
+    def test_patch_price_400_when_guard_rejects_every_country(self, admin_client, prices_populated):
+        """value=95.00 -> gross PL=116.85/DE=113.05/FR=114.00 — a MAP above all three rejects
+        every country (admin_edit's default enforce_mode is reject) -> report.applied is empty
+        -> the view raises a 400, not a 200 with an empty prices list."""
+        ns = prices_populated
+        PriceBoundsConfig.objects.create(product=ns.chair, channel=ns.channel, map_value=Decimal("200.00"))
+
+        response = admin_client.patch(
+            "/api/pricemanager/v2/admin/b2c-europe/prices/CHAIR-001/",
+            {"value": "95.00"},
+            format="json",
+        )
+
+        assert response.status_code == 400
+
+    def test_patch_price_200_partial_skip_surfaces_skipped_countries(self, admin_client, prices_populated):
+        """value=95.00 -> gross PL=116.85 (applies) vs DE=113.05/FR=114.00 (both below a 115.00
+        MAP, both rejected by admin_edit's default reject mode) — the write as a whole still
+        succeeds (PL applied) but the response body must surface DE/FR in `skipped`, not silently
+        drop them."""
+        ns = prices_populated
+        PriceBoundsConfig.objects.create(product=ns.chair, channel=ns.channel, map_value=Decimal("115.00"))
+
+        response = admin_client.patch(
+            "/api/pricemanager/v2/admin/b2c-europe/prices/CHAIR-001/",
+            {"value": "95.00"},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        assert len(response.data["prices"]) == 1
+        assert response.data["prices"][0]["country"] == "PL"
+        skipped_countries = {s["country"] for s in response.data["skipped"]}
+        assert skipped_countries == {"DE", "FR"}
+        assert response.data["clamped"] == []
+
+    def test_patch_price_200_surfaces_clamped_countries(self, admin_client, prices_populated):
+        """Same 115.00 MAP as above, but admin_edit is policy-overridden to clamp instead of
+        reject — DE/FR must come back in `clamped` (written at the floor), not vanish or be
+        reported as `skipped`."""
+        ns = prices_populated
+        PriceSourcePolicy.objects.create(source=PriceSource.ADMIN_EDIT, enforce_mode=PriceWriteEnforceMode.CLAMP)
+        PriceBoundsConfig.objects.create(product=ns.chair, channel=ns.channel, map_value=Decimal("115.00"))
+
+        response = admin_client.patch(
+            "/api/pricemanager/v2/admin/b2c-europe/prices/CHAIR-001/",
+            {"value": "95.00"},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        assert len(response.data["prices"]) == 3
+        clamped_countries = {c["country"] for c in response.data["clamped"]}
+        assert clamped_countries == {"DE", "FR"}
+        assert response.data["skipped"] == []
+        by_country = {p["country"]: p for p in response.data["prices"]}
+        assert Decimal(by_country["DE"]["gross"]) == Decimal("115.00")
+        assert Decimal(by_country["FR"]["gross"]) == Decimal("115.00")
+        assert Decimal(by_country["PL"]["gross"]) == Decimal("116.85")
+
     def test_get_price_detail(self, admin_client, prices_populated):
         """GET detail returns sku, calculate_direction, prices array."""
         resp = admin_client.get("/api/pricemanager/v2/admin/b2c-europe/prices/CHAIR-001/")
@@ -171,14 +234,14 @@ class TestPriceEndpoints:
             country=ch.default_country or Country.objects.first(),
             currency=Currency.objects.first(),
             net_cost="12.3400",
-            supplier_idx="fortrade",
+            supplier_idx="acme",
         )
         resp = admin_client.get("/api/pricemanager/v2/admin/b2c-europe/prices/CHAIR-001/")
         assert resp.status_code == 200
         pcs = resp.json()["purchase_costs"]
         assert len(pcs) == 1
         assert pcs[0]["net_cost"] == "12.3400"
-        assert pcs[0]["supplier_idx"] == "fortrade"
+        assert pcs[0]["supplier_idx"] == "acme"
         assert "modified_at" in pcs[0]
 
     def test_post_preview(self, admin_client, prices_populated):

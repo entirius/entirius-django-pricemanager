@@ -93,6 +93,28 @@ def populate_current_prices(batch_size: int = 5000, dry_run: bool = False) -> in
 
 
 def _flush_current_prices(batch: list[CurrentPrice]) -> None:
+    from django_pricemanager.services import price_bounds_service
+    from django_pricemanager.services.price_write_guard import guard_price_write, load_policy_map
+
+    if not batch:
+        return
+
+    policy_map = load_policy_map()
+    bounds_by_row = price_bounds_service.get_price_bounds_bulk(
+        [(cp.product.sku, cp.channel, cp.country) for cp in batch]
+    )
+    # Every row in a batch shares the same (channel, country, currency, customer_representation) —
+    # it comes from one PriceList/sale_channel combo — so existing sources can be prefetched in bulk.
+    first = batch[0]
+    existing_sources = {
+        (row["product_id"], row["product_parent_id"]): row["source"]
+        for row in CurrentPrice.objects.filter(
+            channel=first.channel,
+            country=first.country,
+            currency=first.currency,
+            customer_representation=first.customer_representation,
+        ).values("product_id", "product_parent_id", "source")
+    }
     for cp in batch:
         lookup = {
             "product": cp.product,
@@ -102,16 +124,34 @@ def _flush_current_prices(batch: list[CurrentPrice]) -> None:
             "customer_representation": cp.customer_representation,
             "product_parent": cp.product_parent,
         }
-        defaults = {
+        existing_source = existing_sources.get((cp.product_id, cp.product_parent_id))
+        new_values = {
             "net_value": cp.net_value,
             "gross_value": cp.gross_value,
             "special_net_value": cp.special_net_value,
             "special_gross_value": cp.special_gross_value,
+            "tax_rate": cp.tax_rate,
+        }
+        bounds = price_bounds_service.bounds_for(bounds_by_row, cp.product.sku, cp.channel.idx, cp.country.iso2)
+        decision = guard_price_write(
+            existing_source=existing_source,
+            new_values=new_values,
+            writer=PriceSource.MIGRATION,
+            policy_map=policy_map,
+            bounds=bounds,
+        )
+        if decision.status == "skipped":
+            continue
+        defaults = {
+            "net_value": decision.values["net_value"],
+            "gross_value": decision.values["gross_value"],
+            "special_net_value": decision.values.get("special_net_value"),
+            "special_gross_value": decision.values.get("special_gross_value"),
             "special_from_date": cp.special_from_date,
             "special_to_date": cp.special_to_date,
             "tax_rate": cp.tax_rate,
             "is_only_for_verified_user": cp.is_only_for_verified_user,
-            "source": cp.source,
+            "source": decision.source,
         }
         CurrentPrice.objects.update_or_create(**lookup, defaults=defaults)
 

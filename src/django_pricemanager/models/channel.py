@@ -34,11 +34,17 @@ class Channel(models.Model):
     calculate_countries = models.ManyToManyField(Country, blank=True, related_name="calculate_countries_channels")
     # Default country = the reference country for price editing. Others are derived via tax rates.
     default_country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # Opt-in auto-price-from-cost (see models.baseline_config.BaselineConfig). Off by default —
+    # a channel without baseline_enabled never gets prices from PurchaseCost alone.
+    baseline_enabled = models.BooleanField(default=False)
     objects = models.Manager()
 
     class Meta:
         ordering = ["idx"]
         verbose_name_plural = "channels"
+        constraints = [
+            models.UniqueConstraint(fields=["idx"], name="unique_channel_idx"),
+        ]
 
     def __str__(self):
         return self.idx

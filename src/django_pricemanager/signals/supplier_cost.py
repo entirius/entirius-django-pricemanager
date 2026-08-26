@@ -2,17 +2,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Subscribe to ``django_suppliers.signals.cost_updated_signal`` and project the
-preferred-supplier cost into ``CurrentPrice``.
+"""Subscribe to ``django_atlas.signals.cost_updated_signal`` and project the
+primary-source cost into ``PurchaseCost``.
 
-Decoupling: django_suppliers is optional from pricemanager's standpoint. The
-signal definition lives there, the receiver lives here. If ``django_suppliers``
+Decoupling: django_atlas is optional from pricemanager's standpoint. The
+signal definition lives there, the receiver lives here. If ``django_atlas``
 is not installed (e.g. standalone test runs of pricemanager) the module
 imports cleanly and the receiver registration is a no-op — there is simply no
 signal to dispatch on.
 
 The business rules live in ``services.supplier_cost_service.apply_supplier_cost``
-so the DB path can be unit-tested without registering the suppliers app.
+so the DB path can be unit-tested without registering the atlas app.
 """
 
 from __future__ import annotations
@@ -28,40 +28,38 @@ logger = logging.getLogger(__name__)
 
 
 try:  # pragma: no cover — import-time wiring, exercised by all integration runs
-    from django_suppliers.models import ProductSupplierLink
-    from django_suppliers.services import audit_service
-    from django_suppliers.signals import cost_updated_signal
+    from django_atlas.models import SourceProductLink
+    from django_atlas.services import audit_service
+    from django_atlas.signals import cost_updated_signal
 
-    _SUPPLIERS_AVAILABLE = True
+    _ATLAS_AVAILABLE = True
 except (ImportError, RuntimeError):
     # ImportError → package not installed at all (clean isolation).
     # RuntimeError → package is on PYTHONPATH but not in INSTALLED_APPS, so Django
     #                refuses to materialise its model classes. Same outcome for us:
-    #                we cannot bind to the signal, treat as "suppliers absent".
+    #                we cannot bind to the signal, treat as "atlas absent".
     cost_updated_signal = None
-    ProductSupplierLink = None
+    SourceProductLink = None
     audit_service = None
-    _SUPPLIERS_AVAILABLE = False
+    _ATLAS_AVAILABLE = False
 
 
-def _resolve_link(real_product_sku: str, supplier):
-    """Return (has_link, is_preferred). ``supplier`` is the django_suppliers Supplier instance."""
-    if ProductSupplierLink is None:
+def _resolve_link(real_product_sku: str, source):
+    """Return (has_link, is_primary). ``source`` is the django_atlas Source instance."""
+    if SourceProductLink is None:
         return False, False
-    link = ProductSupplierLink.objects.filter(
-        real_product_sku=real_product_sku, supplier=supplier, is_active=True
-    ).first()
+    link = SourceProductLink.objects.filter(real_product_sku=real_product_sku, source=source, is_active=True).first()
     if link is None:
         return False, False
-    return True, bool(link.is_preferred)
+    return True, bool(link.is_primary)
 
 
-def _emit_audit(*, supplier_product, outcome) -> None:
+def _emit_audit(*, source_product, outcome) -> None:
     if outcome.audit_source is None or audit_service is None:
         return
     try:
         audit_service.log_change(
-            supplier_product=supplier_product,
+            source_product=source_product,
             source=outcome.audit_source,
             field_path=outcome.field_path,
             before=outcome.before,
@@ -72,34 +70,34 @@ def _emit_audit(*, supplier_product, outcome) -> None:
         logger.exception("Failed to write supplier-cost audit row (signal continues).")
 
 
-def _handle(sender, supplier_product, channel_idx, cost, currency, **kwargs) -> None:
-    """Resolve suppliers context, delegate to the service, fire the audit row."""
-    if not _SUPPLIERS_AVAILABLE:
+def _handle(sender, source_product, channel_idx, cost, currency, **kwargs) -> None:
+    """Resolve atlas context, delegate to the service, fire the audit row."""
+    if not _ATLAS_AVAILABLE:
         return
-    if supplier_product is None or supplier_product.real_product_id is None:
+    if source_product is None or source_product.real_product_id is None:
         return
-    real_sku = supplier_product.real_product.sku
+    real_sku = source_product.real_product.sku
     if not real_sku:
         return
-    has_link, is_preferred = _resolve_link(real_sku, supplier_product.supplier)
+    has_link, is_primary = _resolve_link(real_sku, source_product.source)
     outcome = supplier_cost_service.apply_supplier_cost(
         real_product_sku=real_sku,
-        supplier_idx=supplier_product.supplier.idx,
+        supplier_idx=source_product.source.idx,
         channel_idx=channel_idx,
         cost=cost,
         currency=currency,
-        is_preferred=is_preferred,
+        is_preferred=is_primary,
         has_link=has_link,
     )
-    _emit_audit(supplier_product=supplier_product, outcome=outcome)
+    _emit_audit(source_product=source_product, outcome=outcome)
 
 
-def on_supplier_cost_updated(sender, supplier_product, channel_idx, cost, currency, **kwargs) -> None:
-    """Receiver entry — wraps the work in ``transaction.on_commit`` per D32."""
-    transaction.on_commit(lambda: _handle(sender, supplier_product, channel_idx, cost, currency, **kwargs))
+def on_supplier_cost_updated(sender, source_product, channel_idx, cost, currency, **kwargs) -> None:
+    """Receiver entry — wraps the work in ``transaction.on_commit`` so it runs only after the batch commits."""
+    transaction.on_commit(lambda: _handle(sender, source_product, channel_idx, cost, currency, **kwargs))
 
 
-if _SUPPLIERS_AVAILABLE:  # pragma: no branch
+if _ATLAS_AVAILABLE:  # pragma: no branch
     on_supplier_cost_updated = receiver(  # type: ignore[assignment]
         cost_updated_signal, dispatch_uid="pricemanager_supplier_cost_handler"
     )(on_supplier_cost_updated)

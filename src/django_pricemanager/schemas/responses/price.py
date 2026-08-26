@@ -44,7 +44,7 @@ class PurchaseCostResponse(BaseModel):
     country: str = Field(description="ISO2 country code", examples=["PL"])
     currency: str = Field(description="ISO 4217 currency code", examples=["PLN"])
     net_cost: str = Field(description="Buy-side net cost (what we pay the supplier)", examples=["0.1300"])
-    supplier_idx: str | None = Field(None, description="Supplier idx this cost came from", examples=["fortrade"])
+    supplier_idx: str | None = Field(None, description="Supplier idx this cost came from", examples=["acme"])
     modified_at: str | None = Field(
         None, description="ISO 8601 timestamp of the last cost write", examples=["2026-06-02T10:00:00Z"]
     )
@@ -80,10 +80,40 @@ class PriceDetailResponse(BaseModel):
     )
 
 
+class SkippedCountry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    country: str = Field(description="ISO2 country code", examples=["PL"])
+    currency_id: int = Field(description="Currency primary key", examples=[3])
+    reason: str = Field(
+        description="Why the write guard rejected this row", examples=["below floor 100.00: gross_value"]
+    )
+
+
+class ClampedCountry(SkippedCountry):
+    """Same shape as SkippedCountry — the row was written, but clamped to the bounds floor."""
+
+
+class BulkSkippedCountry(SkippedCountry):
+    sku: str = Field(description="SKU this entry applies to", examples=["CHAIR-001"])
+
+
+class BulkClampedCountry(BulkSkippedCountry):
+    """Same shape as BulkSkippedCountry — the row was written, but clamped to the bounds floor."""
+
+
 class PricePatchResponse(PriceDetailResponse):
     changes_logged: int = Field(
         description="Number of PriceHistory entries created as a result of this update",
         examples=[3],
+    )
+    skipped: list[SkippedCountry] = Field(
+        default_factory=list,
+        description="Countries rejected by the write guard (e.g. below the configured MAP), with reason",
+    )
+    clamped: list[ClampedCountry] = Field(
+        default_factory=list,
+        description="Countries written but clamped to the bounds floor, with reason",
     )
 
 
@@ -135,3 +165,11 @@ class BulkPricePatchResponse(BaseModel):
     updated: int = Field(description="Number of SKUs successfully updated", examples=[3])
     changes_logged: int = Field(description="Total PriceHistory entries created", examples=[15])
     errors: list[BulkPriceEditError] = Field(default_factory=list, description="Per-SKU errors")
+    skipped: list[BulkSkippedCountry] = Field(
+        default_factory=list,
+        description="Countries rejected by the write guard on partially-applied SKUs, with sku + reason",
+    )
+    clamped: list[BulkClampedCountry] = Field(
+        default_factory=list,
+        description="Countries written but clamped to the bounds floor, on partially-applied SKUs, with sku + reason",
+    )

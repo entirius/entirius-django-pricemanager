@@ -212,28 +212,69 @@ def read_from_file(pricelist: PriceList, absolute_path: str | None = None):
         if not PRICEMANAGER_DUAL_WRITE:
             return
         from django_pricemanager.models import CurrentPrice, PriceHistory
+        from django_pricemanager.services import price_bounds_service
+        from django_pricemanager.services.price_write_guard import guard_price_write, load_policy_map
 
         channel = pricelist.sale_channel.channel
+        customer_representation = pricelist.sale_channel.customer_representation
+        policy_map = load_policy_map()
+        bounds_by_sku = price_bounds_service.get_price_bounds_bulk(
+            [(price.product.sku, channel, pricelist.country) for price in created_prices if price.product]
+        )
+
+        product_ids = {price.product_id for price in created_prices if price.product}
+        existing_sources = {
+            (row["product_id"], row["product_parent_id"]): row["source"]
+            for row in CurrentPrice.objects.filter(
+                product_id__in=product_ids,
+                channel=channel,
+                country=pricelist.country,
+                currency=pricelist.currency,
+                customer_representation=customer_representation,
+            ).values("product_id", "product_parent_id", "source")
+        }
+
         history_batch = []
         for price in created_prices:
             if not price.product:
                 continue
+            existing_source = existing_sources.get((price.product_id, price.product_parent_id))
+            new_values = {
+                "net_value": price.net_value,
+                "gross_value": price.gross_value,
+                "special_net_value": price.special_net_value,
+                "special_gross_value": price.special_gross_value,
+                "tax_rate": price.tax_rate,
+            }
+            bounds = price_bounds_service.bounds_for(
+                bounds_by_sku, price.product.sku, channel.idx, pricelist.country.iso2
+            )
+            decision = guard_price_write(
+                existing_source=existing_source,
+                new_values=new_values,
+                writer=PriceSource.CSV_IMPORT,
+                policy_map=policy_map,
+                bounds=bounds,
+            )
+            if decision.status == "skipped":
+                continue
+
             cp, _ = CurrentPrice.objects.update_or_create(
                 product=price.product,
                 channel=channel,
                 country=pricelist.country,
                 currency=pricelist.currency,
-                customer_representation=pricelist.sale_channel.customer_representation,
+                customer_representation=customer_representation,
                 product_parent=price.product_parent,
                 defaults={
-                    "net_value": price.net_value,
-                    "gross_value": price.gross_value,
-                    "special_net_value": price.special_net_value,
-                    "special_gross_value": price.special_gross_value,
+                    "net_value": decision.values["net_value"],
+                    "gross_value": decision.values["gross_value"],
+                    "special_net_value": decision.values.get("special_net_value"),
+                    "special_gross_value": decision.values.get("special_gross_value"),
                     "special_from_date": price.special_from_date,
                     "special_to_date": price.special_to_date,
                     "tax_rate": price.tax_rate,
-                    "source": PriceSource.CSV_IMPORT,
+                    "source": decision.source,
                     "is_only_for_verified_user": pricelist.sale_channel.is_only_for_verified_user,
                 },
             )
@@ -243,13 +284,13 @@ def read_from_file(pricelist: PriceList, absolute_path: str | None = None):
                     channel=channel,
                     country=pricelist.country,
                     currency=pricelist.currency,
-                    customer_representation=pricelist.sale_channel.customer_representation,
-                    gross_value=price.gross_value,
-                    net_value=price.net_value,
-                    special_gross_value=price.special_gross_value,
-                    special_net_value=price.special_net_value,
+                    customer_representation=customer_representation,
+                    gross_value=cp.gross_value,
+                    net_value=cp.net_value,
+                    special_gross_value=cp.special_gross_value,
+                    special_net_value=cp.special_net_value,
                     tax_rate=price.tax_rate,
-                    source=PriceSource.CSV_IMPORT,
+                    source=decision.source,
                 )
             )
         if history_batch:

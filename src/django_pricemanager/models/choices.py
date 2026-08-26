@@ -14,6 +14,8 @@ class PriceSource(models.TextChoices):
     MIGRATION = "migration", "Migration"
     MIGRATION_BACKFILL = "migration_backfill", "Migration Backfill"
     SUPPLIER_COST = "supplier_cost", "Supplier Cost"
+    PRICEFIGHTER = "pricefighter", "PriceFighter"
+    BASELINE = "baseline", "Baseline"
 
 
 # Backward compat alias — used in models CharField(choices=...)
