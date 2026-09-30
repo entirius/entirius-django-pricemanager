@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.2.1 — 2026-09-30
+
+- Fix `manage-pricelists` crashing (`SaleChannel.DoesNotExist`) when a channel has
+  no source price list. It now skips such channels with a message and exits 0,
+  also in `--celery-task` mode.
+- Dev lock refresh for open advisories: sqlparse 0.6.0, djangorestframework 3.18.1,
+  soupsieve 2.10.
+
 ## 4.2.0 — 2026-08-09
 
 - Price write guard: per-source write policies (`PriceSourcePolicy`) with a
