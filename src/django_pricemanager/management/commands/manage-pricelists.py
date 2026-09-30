@@ -6,7 +6,9 @@ from bievents import bi_django_command_decorator
 from celery_once.tasks import AlreadyQueued
 from django.core.management.base import BaseCommand
 
-from django_pricemanager.models import Channel
+from django_pricemanager.models import Channel, PriceList, SaleChannel
+from django_pricemanager.services.sale_channel_service import get_latest_pricelist_by_source
+from django_pricemanager.workers import check_pricelist_soruce
 
 from ...tasks import create_channel_pricelist
 
@@ -34,7 +36,13 @@ class Command(BaseCommand):
             self.stdout.write("No Channels for calculate. Exiting")
             return
 
-        for channel in channels:
+        source = check_pricelist_soruce(price_source)
+        ready = [c for c in channels if self._has_source_pricelist(c, source)]
+        if not ready:
+            self.stdout.write("No price lists to manage. Exiting")
+            return
+
+        for channel in ready:
             if celery_task:
                 try:
                     create_channel_pricelist.delay(channel_idx=channel.idx, price_source=price_source)
@@ -45,3 +53,11 @@ class Command(BaseCommand):
                 self.stdout.write(f"Calculating pricelist for Channel: `{channel.idx}`")
                 create_channel_pricelist(channel_idx=channel.idx, price_source=price_source)
         self.stdout.write(self.style.SUCCESS("DONE"))
+
+    def _has_source_pricelist(self, channel: Channel, price_source: str) -> bool:
+        try:
+            get_latest_pricelist_by_source(channel, price_source)
+        except (SaleChannel.DoesNotExist, PriceList.DoesNotExist):
+            self.stdout.write(f"No price list for Channel: `{channel.idx}`, skipping")
+            return False
+        return True
