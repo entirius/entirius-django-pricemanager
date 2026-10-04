@@ -50,6 +50,7 @@ def _tax_class_detail(tax_class: TaxClass) -> dict:
 class TaxClassViewSet(viewsets.ViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
+    access_area = "pricemanager.settings"
 
     @extend_schema(
         summary="List tax classes",

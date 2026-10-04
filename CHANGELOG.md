@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Access: the module declares its own access areas on its AppConfig and its admin views (copied from the
+  entirius-django-access defaults; behaviour unchanged).
+
 ## 4.2.1 — 2026-09-30
 
 - Fix `manage-pricelists` crashing (`SaleChannel.DoesNotExist`) when a channel has
