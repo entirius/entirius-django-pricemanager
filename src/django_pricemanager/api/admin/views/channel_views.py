@@ -81,6 +81,7 @@ def _channel_detail(channel: Channel) -> dict:
 class ChannelViewSet(viewsets.ViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
+    access_area = "pricemanager.settings"
 
     @extend_schema(
         summary="List channels",
