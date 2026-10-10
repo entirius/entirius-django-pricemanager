@@ -4,6 +4,7 @@
 
 - Access: the module declares its own access areas on its AppConfig and its admin views (copied from the
   entirius-django-access defaults; behaviour unchanged).
+- OpenAPI: `POST channels/sync/` carries the `Channels` tag (it fell back to the default tag). Metadata only.
 
 ## 4.2.1 — 2026-09-30
 
