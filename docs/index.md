@@ -97,4 +97,8 @@ Legacy models (`PriceList`, `Price`, `SaleChannel`) remain in the schema during 
 
 - [Configuration](./configuration/) — all settings and feature flags
 - [Commands](./commands/) — management commands for import, migration, and maintenance
+- [Data Model](./data-model/) — entities and relationships
+- [Admin API](./api/) — admin REST endpoints
+- [Write Guard and Bounds](./write-guard/) — write precedence, price bounds, baseline auto-price
+- [Testing](./testing/) — running the test suite
 - [Changelog](./changelog/) — version history and breaking changes
