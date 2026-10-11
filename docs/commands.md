@@ -3,6 +3,16 @@ title: Commands
 description: Management commands for the Price Manager module.
 ---
 
+## Overview
+
+| Command | Purpose |
+|---------|---------|
+| `migrate_to_current_price` | Data migration from snapshots to CurrentPrice |
+| `import-pricelist-from-csv` | Import prices from CSV |
+| `import-taxclass-from-csv` | Import tax rates from CSV |
+| `manage-pricelists` | Generate pricelists for countries (legacy) |
+| `pricemanager-garbage-collector` | Cleanup old pricelists (deprecated) |
+
 ## migrate_to_current_price
 
 Migrates data from legacy `PriceList`/`Price` snapshots to the `CurrentPrice` + `PriceHistory` architecture. Run once during the v3 upgrade. Safe to re-run — uses `bulk_create` with `update_conflicts`.

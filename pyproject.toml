@@ -1,7 +1,21 @@
 [project]
 name = "entirius-django-pricemanager"
 version = "4.2.1"
-description = "Price management for the Volkanos ecommerce platform: product prices across countries, currencies, channels, and tax regimes"
+description = "Price management for Entirius: product prices across countries, currencies, channels and tax regimes"
+keywords = ["django", "pricing", "price-lists", "tax", "ecommerce", "entirius"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: Django",
+    "Framework :: Django :: 5.2",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial",
+]
 authors = [{ name = "Entirius" }]
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,7 +43,11 @@ dev  = ["ruff", "pre-commit"]
 test = ["pytest", "pytest-django", "pytest-mock", "factory-boy", "dj-database-url", "psycopg[binary]"]
 
 [project.urls]
+Homepage = "https://docs.entirius.com/"
+Documentation = "https://github.com/entirius/entirius-django-pricemanager/tree/develop/docs"
 Repository = "https://github.com/entirius/entirius-django-pricemanager"
+Changelog = "https://github.com/entirius/entirius-django-pricemanager/blob/develop/CHANGELOG.md"
+Issues = "https://github.com/entirius/entirius-django-pricemanager/issues"
 
 [build-system]
 requires = ["hatchling"]
