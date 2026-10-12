@@ -103,6 +103,7 @@ def _parse_price_edit_request(data: dict) -> PriceEditRequest:
 class PriceViewSet(viewsets.ViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
+    access_area = "pricemanager.prices"
     pagination_class = AdminPageNumberPagination
 
     @extend_schema(

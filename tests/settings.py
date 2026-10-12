@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+from importlib.util import find_spec
+
 import dj_database_url
 
 # Postgres required; CI provides DATABASE_URL, locally point it at any postgres 15+
@@ -17,6 +19,9 @@ INSTALLED_APPS = [
     "django_pricemanager",
     "rest_framework",
 ]
+# django_access when importable (zeno): tests/test_access_ownership.py proves the access declarations.
+if find_spec("django_access"):
+    INSTALLED_APPS.append("django_access")
 
 SECRET_KEY = "test-secret-key"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
