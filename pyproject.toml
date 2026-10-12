@@ -1,6 +1,6 @@
 [project]
 name = "entirius-django-pricemanager"
-version = "4.2.1"
+version = "4.3.0"
 description = "Price management for Entirius: product prices across countries, currencies, channels and tax regimes"
 keywords = ["django", "pricing", "price-lists", "tax", "ecommerce", "entirius"]
 classifiers = [
