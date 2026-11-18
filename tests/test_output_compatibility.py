@@ -8,6 +8,8 @@ These verify that the functions return data shapes identical to the legacy
 PriceList-based output.py consumers (matrix, checkout).
 """
 
+from decimal import Decimal
+
 import pytest
 
 from django_pricemanager.models import CurrentPrice
@@ -46,6 +48,24 @@ class TestGetCurrentPrices:
         skus_returned = list(qs.values_list("product__sku", flat=True))
         assert all(s == "CHAIR-001" for s in skus_returned)
         assert "FOOD-001" not in skus_returned
+
+    def test_get_current_prices_skips_bundle_component_rows(self, prices_populated):
+        """A component's price inside a bundle is not the product's own price (legacy `only_products()`)."""
+        ns = prices_populated
+        own = next(p for p in ns.prices if p.product == ns.chair and p.country == ns.pl)
+        CurrentPrice.objects.create(
+            product=ns.chair,
+            product_parent=ns.food,
+            channel=ns.channel,
+            country=ns.pl,
+            currency=ns.pln,
+            tax_rate=own.tax_rate,
+            net_value=Decimal("80.00"),
+            gross_value=Decimal("98.40"),
+            source="csv_import",
+        )
+        qs = get_current_prices(channel_idx=ns.channel.idx, currency="PLN", country="PL", skus=["CHAIR-001"])
+        assert list(qs.values_list("pk", flat=True)) == [own.pk]
 
 
 @pytest.mark.django_db

@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.3.1 — 2026-11-18
+
+- Fix the storefront price of a product that is also a bundle component: `get_current_prices` (the matrix
+  read-model source) returned the component rows priced inside a bundle next to the product's own row, and the read
+  model kept whichever came last, so a price change (e.g. from PriceFighter) could miss the product page. It now
+  returns only the product's own rows, as the legacy price-list path did.
+
 ## 4.3.0 — 2026-10-12
 
 - Access: the module declares its own access areas on its AppConfig and its admin views (copied from the

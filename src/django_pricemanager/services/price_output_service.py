@@ -28,6 +28,9 @@ def get_current_prices(
         channel__idx=channel_idx,
         currency__iso3=currency,
         country__iso2=country,
+        # A product's own price only: rows priced inside a bundle (`product_parent`) belong to the bundle, as in the
+        # legacy `only_products()`. Mixed in, the read model kept whichever row came last for the sku.
+        product_parent__isnull=True,
     ).select_related("product", "tax_rate", "product_parent", "customer_representation")
 
     if skus:
